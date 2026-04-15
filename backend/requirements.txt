@@ -1,0 +1,8 @@
+fastapi[standard]
+uvicorn
+python-multipart
+sqlalchemy
+sqlalchemy-orm
+pgvector
+psycopg2-binary
+photo-dna-rs==0.1.0

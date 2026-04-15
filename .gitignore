@@ -1,0 +1,8 @@
+**/.mypy_cache
+postgres_data
+**/.venv
+**/node_modules
+**/build
+**/__pycache__
+
+backend/uploads/**/*
