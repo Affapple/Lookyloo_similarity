@@ -1,5 +1,6 @@
 import hashlib
 
+from fastapi.responses import JSONResponse
 import uvicorn
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -160,18 +161,20 @@ async def get_hash(file: UploadFile = File(...)):
 
 # Search by image endpoint
 
+@app.exception_handler
+async def validation_exception_handler(request, exc):
+    print(f"[422 DEBUG] Validation error: {exc.errors()}")
+    print(f"[422 DEBUG] Request headers: {dict(request.headers)}")
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 @app.post("/search/by-image", response_model=SearchByImageResponseDTO)
 async def search_by_image(
     image: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    print("WTHURHUWh")
     try:
-        print("-1")
         # Validate file type, Throw HTTPException if validation fails   
         await validate_file(image)
-        print("0")
         
         # Read image file
         image_data = await image.read()
@@ -182,16 +185,15 @@ async def search_by_image(
 
         print("1")
         # Save to temp file first (needed for PhotoDNA library)
-        file_path = save_file(image_data)
-        print("2")
+        file_path = f"{UPLOAD_DIR}/temp/{uuid.uuid4()}.jpg"
+        with open(file_path, "wb") as buffer:
+            buffer.write(image_data)
         
         # Compute PhotoDNA hash from file path
         hash_hex = compute_phash(file_path)
-        print("3")
 
         # Search database for similar images
         results = search_similar_hashes(db, hash_hex, limit=10)
-        print("4")
         
         return SearchByImageResponseDTO(
             calculated_hash=hash_hex,
@@ -199,8 +201,8 @@ async def search_by_image(
             results=[SearchResultDTO(**r) for r in results]
         )
         
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(
             status_code=400,

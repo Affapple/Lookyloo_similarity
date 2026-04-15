@@ -61,7 +61,7 @@ export function useIntroPage() {
 
     try {
       const formData = new FormData()
-      formData.append('file', image)
+      formData.append('image', image)
 
       const response = await fetch('http://localhost:8000/search/by-image', {
         method: 'POST',
