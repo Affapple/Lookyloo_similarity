@@ -5,6 +5,28 @@ from photo_dna_rs import Hash as PhotoDNAHash
 
 MAX_DISTANCE = 100.0 
 
+
+def build_image_url(meta: dict | None) -> str | None:
+    """Build a public uploads URL from stored metadata."""
+    if not meta:
+        return None
+
+    storage_path = meta.get("storage_path")
+    if isinstance(storage_path, str) and storage_path:
+        return f"/uploads/{storage_path.lstrip('/')}"
+
+    filename = meta.get("filename")
+    if not isinstance(filename, str) or not filename:
+        return None
+
+    stem = Path(filename).stem
+    if len(stem) < 4:
+        return None
+
+    # Backward-compatible path derivation for older rows that only stored filename.
+    legacy_path = "/".join([stem[0], stem[1], stem[2], stem[3], filename])
+    return f"/uploads/{legacy_path}"
+
 def compute_phash(file_path: Path | str) -> str:
 
     file_path = Path(file_path) if isinstance(file_path, str) else file_path
@@ -62,9 +84,10 @@ def search_similar_hashes(
             """
             SELECT
                 h.uniq_id,
-                h.hash_hex,
+                h.embedding,
                 i.uid,
-                i.metadata_
+                i.sha256,
+                i.metadata
             FROM hashes h
             JOIN images i ON i.uniq_id = h.uniq_id
             """
@@ -75,7 +98,7 @@ def search_similar_hashes(
 
     for row in rows:
         try:
-            sim = compute_similarity(query_hex, row.hash_hex)
+            sim = compute_similarity(query_hex, row.embedding)
 
             # FILTER LOW MATCHES
             if sim < min_similarity:
@@ -85,9 +108,13 @@ def search_similar_hashes(
                 {
                     "id": str(row.uniq_id),
                     "uid": str(row.uid) if row.uid else None,
-                    "hash_hex": row.hash_hex,
+                    "hash_hex": row.embedding,
                     "match_percentage": similarity_to_percent(sim),
-                    "meta": row.metadata_,
+                    "sha256": row.sha256,
+                    "original_filename": row.metadata.get("original_filename") if isinstance(row.metadata, dict) else None,
+                    "capture_date": row.metadata.get("capture_date") if isinstance(row.metadata, dict) else None,
+                    "meta": row.metadata,
+                    "image_url": build_image_url(row.metadata),
                 }
             )
 

@@ -1,13 +1,17 @@
 import hashlib
+from io import BytesIO
+from datetime import datetime
 
 from fastapi.responses import JSONResponse
 import uvicorn
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import os
 import uuid
 from pathlib import Path
+from PIL import Image as PILImage
 from dotenv import load_dotenv
 from DTOTypes import SearchByImageResponseDTO, SearchByHashResponseDTO, SearchResultDTO 
 from ORM.db import get_db, Image, Hash, init_db
@@ -18,6 +22,8 @@ load_dotenv()
 # Directory to save uploaded files
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_UPLOAD_DIR = UPLOAD_DIR / "temp"
+TEMP_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 PORT = int(os.getenv("BACKEND_PORT", 8000))
 
 app = FastAPI(
@@ -33,13 +39,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # Initialize database on startup
 @app.on_event("startup")
 def on_startup():
     init_db()
 
-def save_file(image_data: bytes) -> Path:
+def save_file(image_data: bytes) -> tuple[Path, str]:
     # Calculate SHA256 hash and use it to create a unique nested directory structure
     sha256_hash = hashlib.sha256(image_data).hexdigest()
     
@@ -71,9 +78,38 @@ def save_file(image_data: bytes) -> Path:
     file_size = file_path.stat().st_size
     print(f"[DEBUG] File verified: {file_path} ({file_size} bytes)")
     
-    return file_path
+    return file_path, sha256_hash
 
-def add_file_to_db(file_path: Path, uid: uuid.UUID = None) -> uuid.UUID:
+def extract_capture_date(image_data: bytes) -> str | None:
+    """Extract capture date from EXIF if present."""
+    try:
+        with PILImage.open(BytesIO(image_data)) as img:
+            exif = img.getexif()
+            if not exif:
+                return None
+
+            # EXIF datetime fields: DateTimeOriginal, DateTimeDigitized, DateTime
+            for tag in (36867, 36868, 306):
+                raw_value = exif.get(tag)
+                if not raw_value:
+                    continue
+                try:
+                    parsed = datetime.strptime(str(raw_value), "%Y:%m:%d %H:%M:%S")
+                    return parsed.isoformat(sep=" ")
+                except ValueError:
+                    return str(raw_value)
+    except Exception:
+        return None
+    return None
+
+
+def add_file_to_db(
+    file_path: Path,
+    sha256_hex: str,
+    original_filename: str | None = None,
+    capture_date: str | None = None,
+    uid: uuid.UUID = None
+) -> uuid.UUID:
     """
     Save image file record to database.
     
@@ -88,9 +124,30 @@ def add_file_to_db(file_path: Path, uid: uuid.UUID = None) -> uuid.UUID:
     
     try:
         # Create image record
+        storage_path = file_path.relative_to(UPLOAD_DIR).as_posix()
+        effective_capture_date = capture_date
+        if not effective_capture_date:
+            # Fallback: use persisted file timestamp when EXIF capture date is unavailable.
+            effective_capture_date = datetime.fromtimestamp(
+                file_path.stat().st_mtime
+            ).isoformat(sep=" ", timespec="seconds")
+
         image_record = Image(
             uid=uid or uuid.uuid4(),
-            metadata_={"filename": file_path.name},
+            sha256=sha256_hex,
+            meta_information={
+                "original_filename": original_filename or file_path.name,
+                "capture_date": effective_capture_date,
+                "sha256": sha256_hex,
+                "storage_path": storage_path,
+            },
+            metadata_={
+                "filename": file_path.name,
+                "original_filename": original_filename or file_path.name,
+                "capture_date": effective_capture_date,
+                "storage_path": storage_path,
+                "sha256": sha256_hex,
+            },
         )
         db.add(image_record)
         db.flush()
@@ -125,6 +182,20 @@ def add_hash_to_db(image_uniq_id: uuid.UUID, hash_hex: str):
         print(f"[ERROR] Failed to save hash: {e}")
         raise Exception(f"Error saving hash to database: {str(e)}")
 
+
+def write_temp_jpeg(image_data: bytes) -> Path:
+    """Normalize uploaded image data to JPEG for PhotoDNA hashing."""
+    temp_path = TEMP_UPLOAD_DIR / f"{uuid.uuid4()}.jpg"
+    try:
+        with PILImage.open(BytesIO(image_data)) as img:
+            # Convert alpha-enabled/palette formats to RGB for JPEG encoding.
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            img.save(temp_path, format="JPEG", quality=95)
+        return temp_path
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}") from e
+
 @app.post("/get_hash")
 async def get_hash(file: UploadFile = File(...)):
     """
@@ -132,26 +203,41 @@ async def get_hash(file: UploadFile = File(...)):
     save the image and hash to the database.
     """
     try:
+        # Reuse the same validation pipeline as /search/by-image
+        await validate_file(file)
+
         # Read image data and save to disk
         image_data = await file.read()
         
         if not image_data:
             return {"error": "Image file is empty"}
         
-        # Save file to disk
-        file_path = save_file(image_data)
+        # Normalize to JPEG before hashing/storage (PhotoDNA decoder expects JPEG data)
+        temp_path = write_temp_jpeg(image_data)
+        normalized_image_data = temp_path.read_bytes()
+        capture_date = extract_capture_date(image_data)
+
+        # Save normalized file to persistent store
+        file_path, sha256_hex = save_file(normalized_image_data)
         
         # Compute PhotoDNA hash from file path
         hash_hex = compute_phash(file_path)
         
         # Save to database
-        image_id = add_file_to_db(file_path)
+        image_id = add_file_to_db(
+            file_path=file_path,
+            sha256_hex=sha256_hex,
+            original_filename=file.filename,
+            capture_date=capture_date,
+        )
         add_hash_to_db(image_id, hash_hex)
 
         return {
             "message": "File uploaded successfully",
             "filename": file.filename,
             "hash": hash_hex,
+            "sha256": sha256_hex,
+            "capture_date": capture_date,
             "file_path": str(file_path),
             "image_id": str(image_id)
         }
@@ -183,14 +269,11 @@ async def search_by_image(
             raise HTTPException(status_code=400, detail="Image file is empty")
         
 
-        print("1")
-        # Save to temp file first (needed for PhotoDNA library)
-        file_path = f"{UPLOAD_DIR}/temp/{uuid.uuid4()}.jpg"
-        with open(file_path, "wb") as buffer:
-            buffer.write(image_data)
+        # Save normalized JPEG temp file (needed for PhotoDNA library)
+        file_path = write_temp_jpeg(image_data)
         
         # Compute PhotoDNA hash from file path
-        hash_hex = compute_phash(file_path)
+        hash_hex = compute_phash(str(file_path))
 
         # Search database for similar images
         results = search_similar_hashes(db, hash_hex, limit=10)

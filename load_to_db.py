@@ -2,16 +2,21 @@ import os
 import sys
 import requests
 from pathlib import Path
+import mimetypes
 
 ENDPOINT = "http://localhost:8000/get_hash"
-IMAGE_EXTENSIONS = {".jpg", ".jpeg"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 def process_image(image_path: Path) -> dict | None:
     with open(image_path, "rb") as f:
-        files = {"file": (image_path.name, f)}
+        content_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+        files = {"file": (image_path.name, f, content_type)}
         response = requests.post(ENDPOINT, files=files)
         response.raise_for_status()
-        return response.json()
+        payload = response.json()
+        if isinstance(payload, dict) and payload.get("error"):
+            raise RuntimeError(payload["error"])
+        return payload
 
 def process_folder(folder_path: str):
     folder = Path(folder_path)

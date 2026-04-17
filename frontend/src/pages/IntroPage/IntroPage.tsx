@@ -15,7 +15,11 @@ export interface SearchResultDTO {
   id: string
   match_percentage: number
   uid: string | null
+  sha256?: string | null
+  original_filename?: string | null
+  capture_date?: string | null
   meta: Record<string, unknown> | null
+  image_url?: string | null
 }
 
 export function useIntroPage() {
@@ -74,7 +78,13 @@ export function useIntroPage() {
 
       const data = await response.json()
       console.log('Upload success:', data)
-      setResults(data.results )
+      const normalizedResults: SearchResultDTO[] = (data.results ?? []).map((item: SearchResultDTO) => ({
+        ...item,
+        image_url: item.image_url
+          ? (item.image_url.startsWith('http') ? item.image_url : `http://localhost:8000${item.image_url}`)
+          : null,
+      }))
+      setResults(normalizedResults)
     } catch (error) {
       console.error('Error uploading image to /search/by-image:', error)
       alert('Error uploading image to backend')
