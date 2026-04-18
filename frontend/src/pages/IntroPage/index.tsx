@@ -3,6 +3,10 @@ import { useIntroPage } from './IntroPage'
 import type { SearchResultDTO } from './IntroPage'
 import './index.css'
 
+type ResultMeta = {
+  image_path?: string
+}
+
 function UploadZone({
   preview,
   isDragging,
@@ -63,7 +67,22 @@ function UploadZone({
   )
 }
 
+const BACKEND_URL = 'http://localhost:8000'
+
+function getImageUrl(item: SearchResultDTO) {
+  const meta = item.meta as ResultMeta | null
+  const imagePath = meta?.image_path
+
+  if (!imagePath) {
+    return null
+  }
+
+  return new URL(imagePath, `${BACKEND_URL}/`).toString()
+}
+
 function MetaModal({ item, onClose }: { item: SearchResultDTO; onClose: () => void }) {
+  const imageUrl = getImageUrl(item)
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -72,6 +91,16 @@ function MetaModal({ item, onClose }: { item: SearchResultDTO; onClose: () => vo
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          {imageUrl && (
+            <div className="modal-image-preview">
+              <img
+                src={imageUrl}
+                alt={`Preview ${item.id}`}
+                className="modal-preview-img"
+                onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none' }}
+              />
+            </div>
+          )}
           <div className="meta-grid">
             <div className="meta-row">
               <span className="meta-label">ID</span>
@@ -98,14 +127,29 @@ function MetaModal({ item, onClose }: { item: SearchResultDTO; onClose: () => vo
   )
 }
 
+// ResultRow — add thumbnail as first cell
 function ResultRow({ item, onShowDetails }: { item: SearchResultDTO; onShowDetails: (item: SearchResultDTO) => void }) {
   const color =
     item.match_percentage > 98 ? 'high' :
     item.match_percentage >= 95 ? 'mid' :
     item.match_percentage >= 90 ? 'low' : ''
 
+  const imageUrl = getImageUrl(item)
+
   return (
     <tr className="result-row">
+      <td className="thumb-cell">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={`Match ${item.id}`}
+            className="result-thumb"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+        ) : (
+          <div className="thumb-placeholder">?</div>
+        )}
+      </td>
       <td className="hash-cell">
         <code className="hash">{item.id}</code>
       </td>
@@ -197,6 +241,7 @@ export function IntroPage() {
               <table className="results-table">
                 <thead>
                   <tr>
+                    <th>Image</th>
                     <th>ID</th>
                     <th>UID</th>
                     <th>Similarity</th>

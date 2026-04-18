@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import os
 import uuid
@@ -33,6 +34,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # Initialize database on startup
 @app.on_event("startup")
@@ -87,10 +90,12 @@ def add_file_to_db(file_path: Path, uid: uuid.UUID = None) -> uuid.UUID:
     db = get_db()
     
     try:
+        public_image_path = f"/{file_path.as_posix()}"
+
         # Create image record
         image_record = Image(
             uid=uid or uuid.uuid4(),
-            metadata_={"filename": file_path.name},
+            metadata_={"filename": file_path.name, "image_path": public_image_path},
         )
         db.add(image_record)
         db.flush()
@@ -185,7 +190,9 @@ async def search_by_image(
 
         print("1")
         # Save to temp file first (needed for PhotoDNA library)
-        file_path = f"{UPLOAD_DIR}/temp/{uuid.uuid4()}.jpg"
+        temp_dir = UPLOAD_DIR / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        file_path = temp_dir / f"{uuid.uuid4()}.jpg"
         with open(file_path, "wb") as buffer:
             buffer.write(image_data)
         
@@ -204,6 +211,8 @@ async def search_by_image(
     except HTTPException as e:
         raise e
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=400,
             detail=f"Error processing image: {str(e)}"

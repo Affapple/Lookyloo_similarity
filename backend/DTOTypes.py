@@ -1,6 +1,7 @@
-from typing import Optional
+from __future__ import annotations
+
+from typing import Optional, List, Dict
 from pydantic import BaseModel
-from typing import List, Optional, Dict
 from datetime import datetime
 import uuid
 
