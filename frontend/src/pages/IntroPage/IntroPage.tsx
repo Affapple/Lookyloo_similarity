@@ -22,6 +22,8 @@ export interface SearchResultDTO {
   image_url?: string | null
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+
 export function useIntroPage() {
   const [preview, setPreview] = useState<string | null>(null)
   const [image, setImage] = useState<File | null>(null)
@@ -67,7 +69,7 @@ export function useIntroPage() {
       const formData = new FormData()
       formData.append('image', image)
 
-      const response = await fetch('http://localhost:8000/search/by-image', {
+      const response = await fetch(`${API_BASE_URL}/search/by-image`, {
         method: 'POST',
         body: formData,
       })
@@ -81,7 +83,7 @@ export function useIntroPage() {
       const normalizedResults: SearchResultDTO[] = (data.results ?? []).map((item: SearchResultDTO) => ({
         ...item,
         image_url: item.image_url
-          ? (item.image_url.startsWith('http') ? item.image_url : `http://localhost:8000${item.image_url}`)
+          ? (item.image_url.startsWith('http') ? item.image_url : `${API_BASE_URL}${item.image_url}`)
           : null,
       }))
       setResults(normalizedResults)

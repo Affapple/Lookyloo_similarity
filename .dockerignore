@@ -1,0 +1,7 @@
+.git
+.venv
+.vite
+postgres_data
+frontend/node_modules
+__pycache__
+**/__pycache__
