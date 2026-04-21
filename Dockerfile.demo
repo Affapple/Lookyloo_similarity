@@ -56,5 +56,5 @@ fi; \
 su -s /bin/bash postgres -c \"/usr/lib/postgresql/18/bin/pg_ctl -D /var/lib/postgresql/data -m fast stop\"; \
 su -s /bin/bash postgres -c \"/usr/lib/postgresql/18/bin/pg_ctl -D /var/lib/postgresql/data -o '-p ${DB_PORT}' -w start\"; \
 cd /app && DB_PORT=${DB_PORT} BACKEND_PORT=${BACKEND_PORT} /opt/venv/bin/python backend/main.py & \
-cd /app/frontend && VITE_API_BASE_URL=http://localhost:${BACKEND_PORT} npm run dev -- --host 0.0.0.0 --port ${FRONTEND_PORT} & \
+cd /app/frontend && npm run dev -- --host 0.0.0.0 --port ${FRONTEND_PORT} & \
 wait -n"]

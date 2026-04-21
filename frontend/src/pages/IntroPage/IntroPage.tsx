@@ -22,7 +22,17 @@ export interface SearchResultDTO {
   image_url?: string | null
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const DEFAULT_BACKEND_PORT = '6535'
+
+function resolveApiBaseUrl(): string {
+  const fromEnv = import.meta.env.VITE_API_BASE_URL
+  if (fromEnv) return fromEnv
+
+  // Use the same host as the UI so remote users do not hit their own localhost.
+  return `${window.location.protocol}//${window.location.hostname}:${DEFAULT_BACKEND_PORT}`
+}
+
+const API_BASE_URL = resolveApiBaseUrl()
 
 export function useIntroPage() {
   const [preview, setPreview] = useState<string | null>(null)
