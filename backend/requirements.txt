@@ -6,3 +6,5 @@ sqlalchemy-orm
 pgvector
 psycopg2-binary
 photo-dna-rs==0.1.0
+Pillow
+requests

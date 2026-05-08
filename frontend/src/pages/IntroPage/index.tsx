@@ -72,6 +72,9 @@ function MetaModal({ item, onClose }: { item: SearchResultDTO; onClose: () => vo
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          {item.image_url && (
+            <img src={item.image_url} alt={`Matched ${item.id}`} className="modal-img" />
+          )}
           <div className="meta-grid">
             <div className="meta-row">
               <span className="meta-label">ID</span>
@@ -85,7 +88,21 @@ function MetaModal({ item, onClose }: { item: SearchResultDTO; onClose: () => vo
               <span className="meta-label">Match</span>
               <span className="meta-value">{item.match_percentage.toFixed(1)}%</span>
             </div>
-            {item.meta && Object.entries(item.meta).map(([key, value]) => (
+            <div className="meta-row">
+              <span className="meta-label">Filename</span>
+              <span className="meta-value">{item.original_filename ?? '—'}</span>
+            </div>
+            <div className="meta-row">
+              <span className="meta-label">Capture Date</span>
+              <span className="meta-value">{item.capture_date ?? '—'}</span>
+            </div>
+            <div className="meta-row">
+              <span className="meta-label">SHA-256</span>
+              <code className="meta-value mono small">{item.sha256 ?? '—'}</code>
+            </div>
+            {item.meta && Object.entries(item.meta)
+              .filter(([key]) => !['sha256', 'original_filename', 'capture_date'].includes(key))
+              .map(([key, value]) => (
               <div className="meta-row" key={key}>
                 <span className="meta-label">{key}</span>
                 <span className="meta-value">{String(value)}</span>
@@ -106,13 +123,22 @@ function ResultRow({ item, onShowDetails }: { item: SearchResultDTO; onShowDetai
 
   return (
     <tr className="result-row">
-      <td className="hash-cell">
-        <code className="hash">{item.id}</code>
+      <td className="thumb-cell">
+        {item.image_url ? (
+          <img src={item.image_url} alt={`Matched ${item.id}`} className="thumb" />
+        ) : (
+          '—'
+        )}
+      </td>
+      <td className="url-cell">
+        <span title={item.original_filename ?? ''}>
+          {item.original_filename ?? '—'}
+        </span>
+      </td>
+      <td>
+        {item.capture_date ?? '—'}
       </td>
       <td className="hash-cell">
-        <code className="hash">{item.uid ?? '—'}</code>
-      </td>
-      <td className="score-cell">
         <span className={`badge ${color}`}>{item.match_percentage.toFixed(1)}%</span>
       </td>
       <td className="actions-cell">
@@ -151,6 +177,13 @@ export function IntroPage() {
             alt="University of Luxembourg"
             className="header-logo uni-logo"
           />
+          {/*
+          <img
+            src="crest-ucd.png"
+            alt="UCD Crest"
+            className="header-logo ucd-logo"
+          />
+          */}
           <img
             src="https://lookyloo.circl.lu/static/lookyloo.png"
             alt="Lookyloo"
@@ -197,8 +230,9 @@ export function IntroPage() {
               <table className="results-table">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>UID</th>
+                    <th>Image</th>
+                    <th>Filename</th>
+                    <th>Capture Date</th>
                     <th>Similarity</th>
                     <th>Details</th>
                   </tr>

@@ -15,7 +15,11 @@ class SearchResultDTO(BaseModel):
     id: str
     match_percentage: float
     uid: str
+    sha256: Optional[str] = None
+    original_filename: Optional[str] = None
+    capture_date: Optional[str] = None
     meta: Optional[Dict] = None  # Changed from str to Dict to support metadata
+    image_url: Optional[str] = None
 
 
 class SearchByImageResponseDTO(BaseModel):

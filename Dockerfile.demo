@@ -1,0 +1,63 @@
+FROM pgvector/pgvector:pg18-trixie
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DB_PASSWORD=password
+ENV DB_PORT=6534
+ENV BACKEND_PORT=6535
+ENV FRONTEND_PORT=6536
+
+WORKDIR /app
+
+# System dependencies for Python backend + Node frontend.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        gnupg \
+        python3 \
+        python3-pip \
+        python3-venv \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install backend dependencies in an isolated venv.
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir -r /app/backend/requirements.txt
+
+# Install frontend dependencies first for layer caching.
+COPY frontend/package.json frontend/package-lock.json /app/frontend/
+RUN npm --prefix /app/frontend ci
+
+# Copy full project source.
+COPY . /app
+
+# Build frontend once during image build for a quick smoke check.
+RUN npm --prefix /app/frontend run build
+
+# Bundle current DB contents as a SQL dump for demo portability.
+COPY demo_data.sql /app/demo_data.sql
+
+EXPOSE 6534 6535 6536
+
+CMD ["bash", "-lc", "set -euo pipefail; \
+mkdir -p /var/lib/postgresql/data; \
+chown -R postgres:postgres /var/lib/postgresql/data; \
+chmod 700 /var/lib/postgresql/data; \
+if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then \
+  su -s /bin/bash postgres -c '/usr/lib/postgresql/18/bin/initdb -D /var/lib/postgresql/data'; \
+fi; \
+su -s /bin/bash postgres -c \"/usr/lib/postgresql/18/bin/pg_ctl -D /var/lib/postgresql/data -o '-p 5432' -w start\"; \
+su -s /bin/bash postgres -c \"/usr/lib/postgresql/18/bin/psql -d postgres -c \\\"ALTER USER postgres WITH PASSWORD '${DB_PASSWORD}';\\\"\"; \
+su -s /bin/bash postgres -c \"/usr/lib/postgresql/18/bin/psql -d postgres -tc \\\"SELECT 1 FROM pg_database WHERE datname='mydb'\\\" | grep -q 1 || /usr/lib/postgresql/18/bin/createdb mydb\"; \
+if [ ! -f /var/lib/postgresql/data/.demo_restored ]; then \
+  su -s /bin/bash postgres -c '/usr/lib/postgresql/18/bin/psql -d mydb -f /app/demo_data.sql'; \
+  touch /var/lib/postgresql/data/.demo_restored; \
+fi; \
+su -s /bin/bash postgres -c \"/usr/lib/postgresql/18/bin/pg_ctl -D /var/lib/postgresql/data -m fast stop\"; \
+su -s /bin/bash postgres -c \"/usr/lib/postgresql/18/bin/pg_ctl -D /var/lib/postgresql/data -o '-p ${DB_PORT}' -w start\"; \
+cd /app && DB_PORT=${DB_PORT} BACKEND_PORT=${BACKEND_PORT} /opt/venv/bin/python backend/main.py & \
+cd /app/frontend && npm run dev -- --host 0.0.0.0 --port ${FRONTEND_PORT} & \
+wait -n"]

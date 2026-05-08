@@ -29,6 +29,8 @@ class Image(Base):
         server_default=text("uuid_generate_v4()")  # calls uuid-ossp's uuidv4()
     )
     uid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    sha256: Mapped[str | None] = mapped_column(nullable=True)
+    meta_information: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False)
     analysis_timestamp: Mapped[datetime] = mapped_column(
         DateTime, server_default=text("CURRENT_TIMESTAMP")
@@ -60,6 +62,59 @@ def init_db():
         print(f"Error creating extensions: {e}")
     
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE images ADD COLUMN IF NOT EXISTS sha256 VARCHAR(64)"))
+            conn.execute(text("ALTER TABLE images ADD COLUMN IF NOT EXISTS meta_information JSONB"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_sha256 ON images(sha256)"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE images
+                    SET sha256 = split_part(metadata->>'filename', '.', 1)
+                    WHERE (sha256 IS NULL OR sha256 = '')
+                      AND metadata ? 'filename'
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE images
+                    SET meta_information = metadata
+                    WHERE meta_information IS NULL
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE images
+                    SET metadata = COALESCE(metadata, '{}'::jsonb)
+                        || jsonb_build_object(
+                            'capture_date',
+                            to_char(analysis_timestamp, 'YYYY-MM-DD HH24:MI:SS')
+                        )
+                    WHERE COALESCE(metadata->>'capture_date', '') = ''
+                    """
+                )
+            )
+            conn.execute(
+                text(
+                    """
+                    UPDATE images
+                    SET meta_information = COALESCE(meta_information, '{}'::jsonb)
+                        || jsonb_build_object(
+                            'capture_date',
+                            to_char(analysis_timestamp, 'YYYY-MM-DD HH24:MI:SS')
+                        )
+                    WHERE COALESCE(meta_information->>'capture_date', '') = ''
+                    """
+                )
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"Error applying sha256 migration: {e}")
 
 db = SessionLocal()
 def get_db():
