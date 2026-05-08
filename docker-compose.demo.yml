@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.demo
     image: lookyloo-demo-allinone:latest
     container_name: lookyloo-demo
+    user: "0:0"
     environment:
       DB_PASSWORD: ${DB_PASSWORD:-password}
       DB_PORT: ${DEMO_DB_PORT:-6534}
@@ -14,9 +15,6 @@ services:
       - "${HOST_DB_PORT:-6534}:${DEMO_DB_PORT:-6534}"
       - "${HOST_BACKEND_PORT:-6535}:${DEMO_BACKEND_PORT:-6535}"
       - "${HOST_FRONTEND_PORT:-6536}:${DEMO_FRONTEND_PORT:-6536}"
-    volumes:
-      - lookyloo_demo_pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /var/lib/postgresql/data
     restart: unless-stopped
-
-volumes:
-  lookyloo_demo_pgdata:

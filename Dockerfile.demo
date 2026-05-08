@@ -43,6 +43,9 @@ COPY demo_data.sql /app/demo_data.sql
 EXPOSE 6534 6535 6536
 
 CMD ["bash", "-lc", "set -euo pipefail; \
+mkdir -p /var/lib/postgresql/data; \
+chown -R postgres:postgres /var/lib/postgresql/data; \
+chmod 700 /var/lib/postgresql/data; \
 if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then \
   su -s /bin/bash postgres -c '/usr/lib/postgresql/18/bin/initdb -D /var/lib/postgresql/data'; \
 fi; \
